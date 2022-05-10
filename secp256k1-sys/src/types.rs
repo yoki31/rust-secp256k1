@@ -1,5 +1,5 @@
 #![allow(non_camel_case_types)]
-use core::{fmt, mem};
+use core::fmt;
 
 pub type c_int = i32;
 pub type c_uchar = u8;
@@ -10,7 +10,7 @@ pub type size_t = usize;
 /// The way we use it makes it fine either way but this type shouldn't be used outside of the library.
 pub type c_char = i8;
 
-/// This is an exact copy of https://doc.rust-lang.org/core/ffi/enum.c_void.html
+/// This is an exact copy of <https://doc.rust-lang.org/core/ffi/enum.c_void.html>
 /// It should be Equivalent to C's void type when used as a pointer.
 ///
 /// We can replace this with `core::ffi::c_void` once we update the rustc version to >=1.30.0.
@@ -40,10 +40,13 @@ impl AlignedType {
     pub fn zeroed() -> Self {
         AlignedType([0u8; 16])
     }
+
+    /// A static zeroed out AlignedType for use in static assignments of [AlignedType; _]
+    pub const ZERO: AlignedType = AlignedType([0u8; 16]);
 }
 
 #[cfg(all(feature = "std", not(rust_secp_no_symbol_renaming)))]
-pub(crate) const ALIGN_TO: usize = mem::align_of::<AlignedType>();
+pub(crate) const ALIGN_TO: usize = ::core::mem::align_of::<AlignedType>();
 
 #[cfg(test)]
 mod tests {

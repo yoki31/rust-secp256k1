@@ -6,38 +6,49 @@ use Error;
 use Secp256k1;
 
 #[cfg(any(feature = "std", feature = "alloc"))]
+#[cfg_attr(docsrs, doc(cfg(any(feature = "std", feature = "alloc"))))]
 pub use self::alloc_only::*;
 
-#[cfg(feature = "global-context-less-secure")]
-/// Module implementing a singleton pattern for a global `Secp256k1` context
+#[cfg(all(feature = "global-context", feature = "std"))]
+#[cfg_attr(docsrs, doc(cfg(all(feature = "global-context", feature = "std"))))]
+/// Module implementing a singleton pattern for a global `Secp256k1` context.
 pub mod global {
-    #[cfg(feature = "global-context")]
+    #[cfg(feature = "rand-std")]
     use rand;
 
     use std::ops::Deref;
     use std::sync::Once;
     use {Secp256k1, All};
 
-    /// Proxy struct for global `SECP256K1` context
+    /// Proxy struct for global `SECP256K1` context.
+    #[derive(Debug, Copy, Clone)]
     pub struct GlobalContext {
         __private: (),
     }
 
-    /// A global, static context to avoid repeatedly creating contexts where one can't be passed
+    /// A global static context to avoid repeatedly creating contexts.
     ///
-    /// If the global-context feature is enabled (and not just the global-context-less-secure),
-    /// this will have been randomized.
+    /// If `rand-std` feature is enabled, context will have been randomized using `thread_rng`.
+    ///
+    /// ```
+    /// # #[cfg(all(feature = "global-context", feature = "rand-std"))] {
+    /// use secp256k1::{PublicKey, SECP256K1};
+    /// use secp256k1::rand::thread_rng;
+    /// let _ = SECP256K1.generate_keypair(&mut thread_rng());
+    /// # }
+    /// ```
     pub static SECP256K1: &GlobalContext = &GlobalContext { __private: () };
 
     impl Deref for GlobalContext {
         type Target = Secp256k1<All>;
 
+        #[allow(unused_mut)]    // Unused when `rand-std` is not enabled.
         fn deref(&self) -> &Self::Target {
             static ONCE: Once = Once::new();
             static mut CONTEXT: Option<Secp256k1<All>> = None;
             ONCE.call_once(|| unsafe {
                 let mut ctx = Secp256k1::new();
-                #[cfg(feature = "global-context")]
+                #[cfg(all(feature = "rand-std", not(feature = "global-context-less-secure")))]
                 {
                     ctx.randomize(&mut rand::thread_rng());
                 }
@@ -49,8 +60,8 @@ pub mod global {
 }
 
 
-/// A trait for all kinds of Context's that Lets you define the exact flags and a function to deallocate memory.
-/// It shouldn't be possible to implement this for types outside this crate.
+/// A trait for all kinds of contexts that lets you define the exact flags and a function to
+/// deallocate memory. It isn't possible to implement this for types outside this crate.
 pub unsafe trait Context : private::Sealed {
     /// Flags for the ffi.
     const FLAGS: c_uint;
@@ -67,25 +78,25 @@ pub trait Signing: Context {}
 pub trait Verification: Context {}
 
 /// Represents the set of capabilities needed for signing with a user preallocated memory.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SignOnlyPreallocated<'buf> {
     phantom: PhantomData<&'buf ()>,
 }
 
 /// Represents the set of capabilities needed for verification with a user preallocated memory.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct VerifyOnlyPreallocated<'buf> {
     phantom: PhantomData<&'buf ()>,
 }
 
 /// Represents the set of all capabilities with a user preallocated memory.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AllPreallocated<'buf> {
     phantom: PhantomData<&'buf ()>,
 }
 
 mod private {
     use super::*;
-    // A trick to prevent users from implementing a trait.
-    // on one hand this trait is public, on the other it's in a private module
-    // so it's not visible to anyone besides it's parent (the context module)
     pub trait Sealed {}
 
     impl<'buf> Sealed for AllPreallocated<'buf> {}
@@ -94,11 +105,15 @@ mod private {
 }
 
 #[cfg(any(feature = "std", feature = "alloc"))]
+#[cfg_attr(docsrs, doc(cfg(any(feature = "std", feature = "alloc"))))]
 mod alloc_only {
     #[cfg(feature = "std")]
     use std::alloc;
     #[cfg(not(feature = "std"))]
     use alloc::alloc;
+
+    #[cfg(feature = "rand-std")]
+    use rand;
 
     impl private::Sealed for SignOnly {}
     impl private::Sealed for All {}
@@ -108,12 +123,18 @@ mod alloc_only {
     const ALIGN_TO: usize = ::core::mem::align_of::<AlignedType>();
 
     /// Represents the set of capabilities needed for signing.
+    #[cfg_attr(docsrs, doc(cfg(any(feature = "std", feature = "alloc"))))]
+    #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub enum SignOnly {}
 
     /// Represents the set of capabilities needed for verification.
+    #[cfg_attr(docsrs, doc(cfg(any(feature = "std", feature = "alloc"))))]
+    #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub enum VerifyOnly {}
 
     /// Represents the set of all capabilities.
+    #[cfg_attr(docsrs, doc(cfg(any(feature = "std", feature = "alloc"))))]
+    #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub enum All {}
 
     impl Signing for SignOnly {}
@@ -153,7 +174,23 @@ mod alloc_only {
     }
 
     impl<C: Context> Secp256k1<C> {
-        /// Lets you create a context in a generic manner(sign/verify/all)
+        /// Lets you create a context in a generic manner (sign/verify/all).
+        ///
+        /// If `rand-std` feature is enabled, context will have been randomized using `thread_rng`.
+        /// If `rand-std` feature is not enabled please consider randomizing the context as follows:
+        /// ```
+        /// # #[cfg(all(feature = "std", feature = "rand-std"))] {
+        /// # use secp256k1::Secp256k1;
+        /// # use secp256k1::rand::{thread_rng, RngCore};
+        /// let mut ctx = Secp256k1::new();
+        /// # let mut rng = thread_rng();
+        /// # let mut seed = [0u8; 32];
+        /// # rng.fill_bytes(&mut seed);
+        /// // let seed = <32 bytes of random data>
+        /// ctx.seeded_randomize(&seed);
+        /// # }
+        /// ```
+        #[allow(unused_mut)]    // Unused when `rand-std` is not enabled.
         pub fn gen_new() -> Secp256k1<C> {
             #[cfg(target_arch = "wasm32")]
             ffi::types::sanity_checks_for_wasm();
@@ -161,30 +198,49 @@ mod alloc_only {
             let size = unsafe { ffi::secp256k1_context_preallocated_size(C::FLAGS) };
             let layout = alloc::Layout::from_size_align(size, ALIGN_TO).unwrap();
             let ptr = unsafe {alloc::alloc(layout)};
-            Secp256k1 {
+            let mut ctx = Secp256k1 {
                 ctx: unsafe { ffi::secp256k1_context_preallocated_create(ptr as *mut c_void, C::FLAGS) },
                 phantom: PhantomData,
                 size,
+            };
+
+            #[cfg(feature = "rand-std")]
+            {
+                ctx.randomize(&mut rand::thread_rng());
             }
+
+            ctx
         }
     }
 
     impl Secp256k1<All> {
-        /// Creates a new Secp256k1 context with all capabilities
+        /// Creates a new Secp256k1 context with all capabilities.
+        ///
+        /// If `rand-std` feature is enabled, context will have been randomized using `thread_rng`.
+        /// If `rand-std` feature is not enabled please consider randomizing the context (see docs
+        /// for `Secp256k1::gen_new()`).
         pub fn new() -> Secp256k1<All> {
             Secp256k1::gen_new()
         }
     }
 
     impl Secp256k1<SignOnly> {
-        /// Creates a new Secp256k1 context that can only be used for signing
+        /// Creates a new Secp256k1 context that can only be used for signing.
+        ///
+        /// If `rand-std` feature is enabled, context will have been randomized using `thread_rng`.
+        /// If `rand-std` feature is not enabled please consider randomizing the context (see docs
+        /// for `Secp256k1::gen_new()`).
         pub fn signing_only() -> Secp256k1<SignOnly> {
             Secp256k1::gen_new()
         }
     }
 
     impl Secp256k1<VerifyOnly> {
-        /// Creates a new Secp256k1 context that can only be used for verification
+        /// Creates a new Secp256k1 context that can only be used for verification.
+        ///
+        /// If `rand-std` feature is enabled, context will have been randomized using `thread_rng`.
+        /// If `rand-std` feature is not enabled please consider randomizing the context (see docs
+        /// for `Secp256k1::gen_new()`).
         pub fn verification_only() -> Secp256k1<VerifyOnly> {
             Secp256k1::gen_new()
         }
@@ -230,7 +286,7 @@ unsafe impl<'buf> Context for VerifyOnlyPreallocated<'buf> {
     const DESCRIPTION: &'static str = "verification only";
 
     unsafe fn deallocate(_ptr: *mut u8, _size: usize) {
-        // Allocated by the user
+        // Allocated by the user.
     }
 }
 
@@ -239,7 +295,7 @@ unsafe impl<'buf> Context for AllPreallocated<'buf> {
     const DESCRIPTION: &'static str = "all capabilities";
 
     unsafe fn deallocate(_ptr: *mut u8, _size: usize) {
-        // Allocated by the user
+        // Allocated by the user.
     }
 }
 
@@ -269,7 +325,7 @@ impl<'buf> Secp256k1<AllPreallocated<'buf>> {
     pub fn preallocated_new(buf: &'buf mut [AlignedType]) -> Result<Secp256k1<AllPreallocated<'buf>>, Error> {
         Secp256k1::preallocated_gen_new(buf)
     }
-    /// Uses the ffi `secp256k1_context_preallocated_size` to check the memory size needed for a context
+    /// Uses the ffi `secp256k1_context_preallocated_size` to check the memory size needed for a context.
     pub fn preallocate_size() -> usize {
         Self::preallocate_size_gen()
     }
@@ -295,12 +351,12 @@ impl<'buf> Secp256k1<AllPreallocated<'buf>> {
 }
 
 impl<'buf> Secp256k1<SignOnlyPreallocated<'buf>> {
-    /// Creates a new Secp256k1 context that can only be used for signing
+    /// Creates a new Secp256k1 context that can only be used for signing.
     pub fn preallocated_signing_only(buf: &'buf mut [AlignedType]) -> Result<Secp256k1<SignOnlyPreallocated<'buf>>, Error> {
         Secp256k1::preallocated_gen_new(buf)
     }
 
-    /// Uses the ffi `secp256k1_context_preallocated_size` to check the memory size needed for the context
+    /// Uses the ffi `secp256k1_context_preallocated_size` to check the memory size needed for the context.
     #[inline]
     pub fn preallocate_signing_size() -> usize {
         Self::preallocate_size_gen()
@@ -315,7 +371,7 @@ impl<'buf> Secp256k1<SignOnlyPreallocated<'buf>> {
     /// * The capabilities (All/SignOnly/VerifyOnly) of the context *must* match the flags passed to libsecp256k1
     /// when generating the context.
     /// * The user must handle the freeing of the context(using the correct functions) by himself.
-    /// * This list *is not* exhaustive, and any violation may lead to Undefined Behavior.,
+    /// * This list *is not* exhaustive, and any violation may lead to Undefined Behavior.
     ///
     pub unsafe fn from_raw_signining_only(raw_ctx: *mut ffi::Context) -> ManuallyDrop<Secp256k1<SignOnlyPreallocated<'buf>>> {
         ManuallyDrop::new(Secp256k1 {
@@ -332,7 +388,7 @@ impl<'buf> Secp256k1<VerifyOnlyPreallocated<'buf>> {
         Secp256k1::preallocated_gen_new(buf)
     }
 
-    /// Uses the ffi `secp256k1_context_preallocated_size` to check the memory size needed for the context
+    /// Uses the ffi `secp256k1_context_preallocated_size` to check the memory size needed for the context.
     #[inline]
     pub fn preallocate_verification_size() -> usize {
         Self::preallocate_size_gen()
@@ -347,7 +403,7 @@ impl<'buf> Secp256k1<VerifyOnlyPreallocated<'buf>> {
     /// * The capabilities (All/SignOnly/VerifyOnly) of the context *must* match the flags passed to libsecp256k1
     /// when generating the context.
     /// * The user must handle the freeing of the context(using the correct functions) by himself.
-    /// * This list *is not* exhaustive, and any violation may lead to Undefined Behavior.,
+    /// * This list *is not* exhaustive, and any violation may lead to Undefined Behavior.
     ///
     pub unsafe fn from_raw_verification_only(raw_ctx: *mut ffi::Context) -> ManuallyDrop<Secp256k1<VerifyOnlyPreallocated<'buf>>> {
         ManuallyDrop::new(Secp256k1 {

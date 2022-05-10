@@ -52,13 +52,16 @@ fn main() {
     #[cfg(feature = "recovery")]
     base_config.define("ENABLE_MODULE_RECOVERY", Some("1"));
 
-    // Header files. WASM only.
+    // WASM headers and size/align defines.
     if env::var("CARGO_CFG_TARGET_ARCH").unwrap() == "wasm32" {
-        base_config.include("wasm-sysroot");
+        base_config.include("wasm/wasm-sysroot")
+                   .file("wasm/wasm.c");
     }
 
     // secp256k1
     base_config.file("depend/secp256k1/contrib/lax_der_parsing.c")
+               .file("depend/secp256k1/src/precomputed_ecmult_gen.c")
+               .file("depend/secp256k1/src/precomputed_ecmult.c")
                .file("depend/secp256k1/src/secp256k1.c")
                .compile("libsecp256k1.a");
 }

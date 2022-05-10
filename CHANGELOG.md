@@ -1,6 +1,41 @@
-# Unreleased
+# 0.22.1 - 2022-03-10
 
-* Rename `secp256k1::bitcoin_hashes` module to `secp256k1::hashes` to align with `bitcoin` crate naming.
+* [Reintroduce](https://github.com/rust-bitcoin/rust-secp256k1/pull/417) accidentally removed possibility to create `SharedSecret` from byte serialization
+
+# 0.22.0 - 2022-03-08
+
+* Disable `bitcoin_hashes/std` by default; [add `bitcoin-hashes-std` feature to re-enable it](https://github.com/rust-bitcoin/rust-secp256k1/pull/410)
+* Rename [more `schnorrsig` methods to `schnorr`](https://github.com/rust-bitcoin/rust-secp256k1/pull/411)
+* [Obfuscate `SharedSecret` string serialization](https://github.com/rust-bitcoin/rust-secp256k1/pull/396)
+* [Simplify `SharedSecret` API](https://github.com/rust-bitcoin/rust-secp256k1/pull/402) to use a 32-byte buffer; users of custom hashes should now use bare arrays rather than this type.
+* Change [serde serialization of `Parity`](https://github.com/rust-bitcoin/rust-secp256k1/pull/401) from `i32` to `u8`; clean up [error handling](https://github.com/rust-bitcoin/rust-secp256k1/pull/403)
+
+# 0.21.3 - 2022-01-31
+
+* Several documentation improvements ([#366](https://github.com/rust-bitcoin/rust-secp256k1/pull/366), [#365](https://github.com/rust-bitcoin/rust-secp256k1/pull/365), [#373](https://github.com/rust-bitcoin/rust-secp256k1/pull/373), [#381](https://github.com/rust-bitcoin/rust-secp256k1/pull/381), [#369](https://github.com/rust-bitcoin/rust-secp256k1/pull/369), [#389](https://github.com/rust-bitcoin/rust-secp256k1/pull/389), [#391](https://github.com/rust-bitcoin/rust-secp256k1/pull/391), [#397](https://github.com/rust-bitcoin/rust-secp256k1/pull/397), [#399](https://github.com/rust-bitcoin/rust-secp256k1/pull/399), [#340](https://github.com/rust-bitcoin/rust-secp256k1/pull/365))
+* Deprecate the [`generate_schnorrsig_keypair` method](https://github.com/rust-bitcoin/rust-secp256k1/pull/372) (unclear value)
+* Add [serde traits to `KeyPair`](https://github.com/rust-bitcoin/rust-secp256k1/pull/379)
+* Redo the [API of the new `Parity` type](https://github.com/rust-bitcoin/rust-secp256k1/pull/382) to more clearly match our desired semantics; **the `From<i32>` impl on this type is now deprecated**. Also [#400](https://github.com/rust-bitcoin/rust-secp256k1/pull/400).
+* Randomize [the global context on creation](https://github.com/rust-bitcoin/rust-secp256k1/pull/385) when possible; weaken [`global-context-less-secure` feature accordingly](https://github.com/rust-bitcoin/rust-secp256k1/pull/407).
+* Improve [the global context API](https://github.com/rust-bitcoin/rust-secp256k1/pull/392)
+* Fix [the `Debug` impl](https://github.com/rust-bitcoin/rust-secp256k1/pull/393) for `RecoverableSignature`
+* Implement [`LowerHex` and `Display`](https://github.com/rust-bitcoin/rust-secp256k1/pull/398)
+
+# 0.21.0 - 2022-01-02
+
+* Fix `KeyPair::from_seckey_slice` [error return value](https://github.com/rust-bitcoin/rust-secp256k1/pull/316)
+* Reduce the `lowmemory` [precomp table size](https://github.com/rust-bitcoin/rust-secp256k1/pull/323)
+* [Add `KeyPair::serialize_sec`](https://github.com/rust-bitcoin/rust-secp256k1/pull/308)
+* Increase [`bitcoin_hashes` version to 0.10](https://github.com/rust-bitcoin/rust-secp256k1/pull/326); rename `secp256k1::bitcoin_hashes` module to `secp256k1::hashes` to align with `bitcoin` crate naming
+* Add new [error variant for `PublicKey::combine_keys`](https://github.com/rust-bitcoin/rust-secp256k1/pull/304)
+* Change `Display` and `Debug` for secret keys to [only output a truncated hash](https://github.com/rust-bitcoin/rust-secp256k1/pull/312)
+* [Improve documentation](https://github.com/rust-bitcoin/rust-secp256k1/pull/307)
+* [Implement `Hash` for `schnorrsig::Signature`](https://github.com/rust-bitcoin/rust-secp256k1/pull/335)
+* Refactor modules to put [Schnorr and ECDSA on more equal footing](https://github.com/rust-bitcoin/rust-secp256k1/pull/327)
+* Add serde traits [for `KeyPair` type](https://github.com/rust-bitcoin/rust-secp256k1/pull/313)
+* Fix [context bound requirements for a few methods](https://github.com/rust-bitcoin/rust-secp256k1/pull/342)
+* Add a [static immutable-zero aligned type](https://github.com/rust-bitcoin/rust-secp256k1/pull/345)
+* Change `tweak_add_assign` and `tweak_add_check` to [use an opaque `Parity` type rather than a boolean](https://github.com/rust-bitcoin/rust-secp256k1/pull/344/)
 
 # 0.20.3 - 2021-06-10
 

@@ -16,13 +16,13 @@
 //! # FFI of the recovery module
 
 use ::types::*;
-use {Context, Signature, NonceFn, PublicKey};
+use ::core::fmt;
+use {Context, Signature, NonceFn, PublicKey, CPtr};
 
 /// Library-internal representation of a Secp256k1 signature + recovery ID
 #[repr(C)]
 pub struct RecoverableSignature([c_uchar; 65]);
 impl_array_newtype!(RecoverableSignature, c_uchar, 65);
-impl_raw_debug!(RecoverableSignature);
 
 impl RecoverableSignature {
     /// Create a new (zeroed) signature usable for the FFI interface
@@ -35,18 +35,42 @@ impl Default for RecoverableSignature {
     }
 }
 
+impl fmt::Debug for RecoverableSignature {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut ret = [0u8; 64];
+        let mut recid = 0i32;
+
+        unsafe {
+            let err = secp256k1_ecdsa_recoverable_signature_serialize_compact(
+                super::secp256k1_context_no_precomp,
+                ret.as_mut_c_ptr(),
+                &mut recid,
+                self,
+            );
+            assert!(err == 1);
+        }
+
+        for byte in ret.iter() {
+            write!(f, "{:02x}", byte)?;
+        }
+        write!(f, "{:02x}", recid as u8)?;
+
+        Ok(())
+    }
+}
+
 extern "C" {
-    #[cfg_attr(not(rust_secp_no_symbol_renaming), link_name = "rustsecp256k1_v0_4_1_ecdsa_recoverable_signature_parse_compact")]
+    #[cfg_attr(not(rust_secp_no_symbol_renaming), link_name = "rustsecp256k1_v0_5_0_ecdsa_recoverable_signature_parse_compact")]
     pub fn secp256k1_ecdsa_recoverable_signature_parse_compact(cx: *const Context, sig: *mut RecoverableSignature,
                                                                input64: *const c_uchar, recid: c_int)
                                                                -> c_int;
 
-    #[cfg_attr(not(rust_secp_no_symbol_renaming), link_name = "rustsecp256k1_v0_4_1_ecdsa_recoverable_signature_serialize_compact")]
+    #[cfg_attr(not(rust_secp_no_symbol_renaming), link_name = "rustsecp256k1_v0_5_0_ecdsa_recoverable_signature_serialize_compact")]
     pub fn secp256k1_ecdsa_recoverable_signature_serialize_compact(cx: *const Context, output64: *mut c_uchar,
                                                                    recid: *mut c_int, sig: *const RecoverableSignature)
                                                                    -> c_int;
 
-    #[cfg_attr(not(rust_secp_no_symbol_renaming), link_name = "rustsecp256k1_v0_4_1_ecdsa_recoverable_signature_convert")]
+    #[cfg_attr(not(rust_secp_no_symbol_renaming), link_name = "rustsecp256k1_v0_5_0_ecdsa_recoverable_signature_convert")]
     pub fn secp256k1_ecdsa_recoverable_signature_convert(cx: *const Context, sig: *mut Signature,
                                                          input: *const RecoverableSignature)
                                                          -> c_int;
@@ -54,7 +78,7 @@ extern "C" {
 
 #[cfg(not(fuzzing))]
 extern "C" {
-    #[cfg_attr(not(rust_secp_no_symbol_renaming), link_name = "rustsecp256k1_v0_4_1_ecdsa_sign_recoverable")]
+    #[cfg_attr(not(rust_secp_no_symbol_renaming), link_name = "rustsecp256k1_v0_5_0_ecdsa_sign_recoverable")]
     pub fn secp256k1_ecdsa_sign_recoverable(cx: *const Context,
                                             sig: *mut RecoverableSignature,
                                             msg32: *const c_uchar,
@@ -63,7 +87,7 @@ extern "C" {
                                             noncedata: *const c_void)
                                             -> c_int;
 
-    #[cfg_attr(not(rust_secp_no_symbol_renaming), link_name = "rustsecp256k1_v0_4_1_ecdsa_recover")]
+    #[cfg_attr(not(rust_secp_no_symbol_renaming), link_name = "rustsecp256k1_v0_5_0_ecdsa_recover")]
     pub fn secp256k1_ecdsa_recover(cx: *const Context,
                                    pk: *mut PublicKey,
                                    sig: *const RecoverableSignature,

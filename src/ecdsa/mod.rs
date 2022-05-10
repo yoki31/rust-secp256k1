@@ -9,10 +9,14 @@ use ffi::CPtr;
 mod recovery;
 
 #[cfg(feature = "recovery")]
+#[cfg_attr(docsrs, doc(cfg(feature = "recovery")))]
 pub use self::recovery::{RecoveryId, RecoverableSignature};
 
+#[cfg(feature = "global-context")]
+use SECP256K1;
+
 /// An ECDSA signature
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub struct Signature(pub(crate) ffi::Signature);
 
 /// A DER serialized Signature
@@ -31,7 +35,19 @@ impl fmt::Debug for Signature {
 impl fmt::Display for Signature {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let sig = self.serialize_der();
-        for v in sig.iter() {
+        sig.fmt(f)
+    }
+}
+
+impl fmt::Debug for SerializedSignature {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Display::fmt(self, f)
+    }
+}
+
+impl fmt::Display for SerializedSignature {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        for v in self.data.iter().take(self.len) {
             write!(f, "{:02x}", v)?;
         }
         Ok(())
@@ -256,6 +272,14 @@ impl Signature {
         }
         ret
     }
+
+    /// Verifies an ECDSA signature for `msg` using `pk` and the global [`SECP256K1`] context.
+    #[inline]
+    #[cfg(feature = "global-context")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "global-context")))]
+    pub fn verify(&self, msg: &Message, pk: &PublicKey) -> Result<(), Error> {
+        SECP256K1.verify_ecdsa(msg, self, pk)
+    }
 }
 
 impl CPtr for Signature {
@@ -279,6 +303,7 @@ impl From<ffi::Signature> for Signature {
 }
 
 #[cfg(feature = "serde")]
+#[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
 impl ::serde::Serialize for Signature {
     fn serialize<S: ::serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         if s.is_human_readable() {
@@ -290,6 +315,7 @@ impl ::serde::Serialize for Signature {
 }
 
 #[cfg(feature = "serde")]
+#[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
 impl<'de> ::serde::Deserialize<'de> for Signature {
     fn deserialize<D: ::serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         if d.is_human_readable() {
@@ -314,18 +340,42 @@ impl<C: Signing> Secp256k1<C> {
         self.sign_ecdsa(msg, sk)
     }
 
-    /// Constructs a signature for `msg` using the secret key `sk` and RFC6979 nonce
-    /// Requires a signing-capable context.
-    pub fn sign_ecdsa(&self, msg: &Message, sk: &SecretKey) -> Signature {
+    fn sign_ecdsa_with_noncedata_pointer(
+        &self,
+        msg: &Message,
+        sk: &SecretKey,
+        noncedata_ptr: *const ffi::types::c_void,
+    ) -> Signature {
         unsafe {
             let mut ret = ffi::Signature::new();
             // We can assume the return value because it's not possible to construct
             // an invalid signature from a valid `Message` and `SecretKey`
             assert_eq!(ffi::secp256k1_ecdsa_sign(self.ctx, &mut ret, msg.as_c_ptr(),
                                                  sk.as_c_ptr(), ffi::secp256k1_nonce_function_rfc6979,
-                                                 ptr::null()), 1);
+                                                 noncedata_ptr), 1);
             Signature::from(ret)
         }
+    }
+
+    /// Constructs a signature for `msg` using the secret key `sk` and RFC6979 nonce
+    /// Requires a signing-capable context.
+    pub fn sign_ecdsa(&self, msg: &Message, sk: &SecretKey) -> Signature {
+        self.sign_ecdsa_with_noncedata_pointer(msg, sk, ptr::null())
+    }
+
+    /// Constructs a signature for `msg` using the secret key `sk` and RFC6979 nonce
+    /// and includes 32 bytes of noncedata in the nonce generation via inclusion in
+    /// one of the hash operations during nonce generation. This is useful when multiple
+    /// signatures are needed for the same Message and SecretKey while still using RFC6979.
+    /// Requires a signing-capable context.
+    pub fn sign_ecdsa_with_noncedata(
+        &self,
+        msg: &Message,
+        sk: &SecretKey,
+        noncedata: &[u8; 32],
+    ) -> Signature {
+        let noncedata_ptr = noncedata.as_ptr() as *const ffi::types::c_void;
+        self.sign_ecdsa_with_noncedata_pointer(msg, sk, noncedata_ptr)
     }
 
     fn sign_grind_with_check(
@@ -366,7 +416,7 @@ impl<C: Signing> Secp256k1<C> {
 
     /// Constructs a signature for `msg` using the secret key `sk`, RFC6979 nonce
     /// and "grinds" the nonce by passing extra entropy if necessary to produce
-    /// a signature that is less than 71 - bytes_to_grund bytes. The number
+    /// a signature that is less than 71 - `bytes_to_grind` bytes. The number
     /// of signing operation performed by this function is exponential in the
     /// number of bytes grinded.
     /// Requires a signing capable context.
@@ -377,13 +427,13 @@ impl<C: Signing> Secp256k1<C> {
 
     /// Constructs a signature for `msg` using the secret key `sk`, RFC6979 nonce
     /// and "grinds" the nonce by passing extra entropy if necessary to produce
-    /// a signature that is less than 71 - bytes_to_grund bytes. The number
+    /// a signature that is less than 71 - `bytes_to_grind` bytes. The number
     /// of signing operation performed by this function is exponential in the
     /// number of bytes grinded.
     /// Requires a signing capable context.
     pub fn sign_ecdsa_grind_r(&self, msg: &Message, sk: &SecretKey, bytes_to_grind: usize) -> Signature {
         let len_check = |s : &ffi::Signature| der_length_check(s, 71 - bytes_to_grind);
-        return self.sign_grind_with_check(msg, sk, len_check);
+        self.sign_grind_with_check(msg, sk, len_check)
     }
 
     /// Constructs a signature for `msg` using the secret key `sk`, RFC6979 nonce
@@ -392,9 +442,9 @@ impl<C: Signing> Secp256k1<C> {
     /// signature implementation of bitcoin core. In average, this function
     /// will perform two signing operations.
     /// Requires a signing capable context.
-    #[deprecated(since = "0.21.0", note = "Use sign_ecdsa_grind_r instead.")]
+    #[deprecated(since = "0.21.0", note = "Use sign_ecdsa_low_r instead.")]
     pub fn sign_low_r(&self, msg: &Message, sk: &SecretKey) -> Signature {
-        return self.sign_grind_with_check(msg, sk, compact_sig_has_zero_first_bit)
+        self.sign_grind_with_check(msg, sk, compact_sig_has_zero_first_bit)
     }
 
     /// Constructs a signature for `msg` using the secret key `sk`, RFC6979 nonce
@@ -404,7 +454,7 @@ impl<C: Signing> Secp256k1<C> {
     /// will perform two signing operations.
     /// Requires a signing capable context.
     pub fn sign_ecdsa_low_r(&self, msg: &Message, sk: &SecretKey) -> Signature {
-        return self.sign_grind_with_check(msg, sk, compact_sig_has_zero_first_bit)
+        self.sign_grind_with_check(msg, sk, compact_sig_has_zero_first_bit)
     }
 }
 
@@ -416,7 +466,7 @@ impl<C: Verification> Secp256k1<C> {
     /// verify-capable context.
     ///
     /// ```rust
-    /// # #[cfg(feature="rand")] {
+    /// # #[cfg(all(feature = "std", feature = "rand-std"))] {
     /// # use secp256k1::rand::rngs::OsRng;
     /// # use secp256k1::{Secp256k1, Message, Error};
     /// #
@@ -445,7 +495,7 @@ impl<C: Verification> Secp256k1<C> {
     /// verify-capable context.
     ///
     /// ```rust
-    /// # #[cfg(feature="rand")] {
+    /// # #[cfg(all(feature = "std", feature = "rand-std"))] {
     /// # use secp256k1::rand::rngs::OsRng;
     /// # use secp256k1::{Secp256k1, Message, Error};
     /// #
